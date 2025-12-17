@@ -1,0 +1,613 @@
+\documentclass[unicode,a4paper,14pt]{extarticle}
+
+\input{0_settings}
+
+\begin{document}
+\setcounter{page}{3}
+
+\tableofcontents
+\newpage
+
+\section{Введение}
+
+Организация совместных поездок и мероприятий с друзьями и знакомыми стала обыденным явлением. При этом одной из наиболее трудоёмких задач является справедливое разделение общих расходов между участниками. В процессе путешествия или группового мероприятия возникают различные траты: проживание, питание, транспорт, развлечения. Зачастую один человек оплачивает расходы за всю группу, а затем возникает необходимость вести учёт и производить взаиморасчёты.
+
+Традиционные методы ведения учёта расходов -- использование бумажных блокнотов, таблиц в мессенджерах или Google-таблицах -- создают ряд проблем:
+\begin{itemize}
+    \item Высокая вероятность ошибок при ручном подсчёте
+    \item Сложность отслеживания изменений и истории операций
+    \item Отсутствие автоматического расчёта итоговых долгов
+    \item Необходимость дублирования информации между участниками
+\end{itemize}
+
+Существующие решения для разделения расходов, такие как Splitwise, Tricount и Settle Up, решают эти проблемы, хоть и имеют свои недостатки.
+
+\newpage
+
+\section{Что хотим получить}
+
+Результатом этой курсовой работы должно стать веб-приложение для управления групповыми расходами. 
+Назовём это приложение \textbf{TripF} (Trip Finance).
+
+Основные требования к системе: 
+
+\begin{itemize}
+    \item Интуитивно понятный интерфейс;
+    \item Регистрация пользователей;
+    \item Создание групп;
+    \item Возможность приглашения других пользователей в группу;
+    \item Добавление расходов;
+    \item Автоматический расчёт долгов;
+    \item Отметка о выполненных платежах;
+    \item Возможность удалять/редактировать расходы, удалять участников из группы, удалять группы.
+\end{itemize}
+
+\section{Средства реализации}
+\subsection{Клиентская часть}
+
+Для разработки клиентской части приложения использовались следующие технологии:
+
+\textbf{React 19} \cite{react} -- современная JavaScript-библиотека для создания пользовательских интерфейсов. 
+
+\textbf{Next.js 16} \cite{nextjs} -- React-фреймворк с поддержкой серверного рендеринга. Используется для: API Routes для создания backend-функционала, file-based роутинга для удобной навигации.
+
+\textbf{TypeScript 5} \cite{typescript} -- типизированный JavaScript. Обеспечивает: Статическую проверку типов на этапе разработки, улучшение читаемости и поддерживаемости кода.
+
+\textbf{Tailwind CSS 4} \cite{tailwindcss} -- utility-first Iinline CSS фреймворк. Позволяет определять стили прямо в HTML-коде, используя предопределённые классы-хелперы.
+
+\textbf{SWR 2.3} \cite{swr} -- библиотека для управления состоянием и кэширования данных. Используется для автоматического кэширования ответов API (то есть позволяет избежать повторных запросов к серверу).
+
+\subsection{Серверная часть}
+
+\textbf{Node.js} -- серверная платформа на базе V8 JavaScript-движка. Обеспечивает единый язык для фронта и бэка (TypeScript) и большую экосистему пакетов npm.
+
+\textbf{Next.js API Routes} -- встроенная в Next.js возможность создания API-эндпоинтов (файлы в папке \texttt{app/api/} автоматически становятся API-роутами).
+
+\textbf{Better-SQLite3 12.4} \cite{bettersqlite3} -- библиотека для работы с SQLite \cite{sqlite}. Выбор обусловлен простым синтаксисом и высокой скоростью работы.
+
+\textbf{Custom HTTPS Server} -- собственный сервер на базе Node.js \texttt{https} модуля \cite{nodejs-https} (\texttt{server.js}). Так как у меня iPhone он отказывается открывать http сайты из локальной сети. Поэтому были созданы самоподписанные сертификаты и соотвественно для этого нужен такой <<костыль>>.
+
+\subsection{Обоснование выбора технологий}
+
+Главным критерием выбора такого стека -- единая экосистема Next.js. Это позволяет использовать один и тот же язык для фронта и бэка, что упрощает разработку и позволяет переиспользовать код (типы данных, утилиты).
+
+\newpage
+
+\section{Архитектура системы}
+\subsection{Общая архитектура приложения}
+
+Приложение TripF построено по классической клиент-серверной архитектуре с использованием паттерна MVC (Model-View-Controller), адаптированного для современных веб-приложений.
+
+\textbf{Архитектурные слои}:
+
+\begin{enumerate}
+    \item \textbf{Слой представления (View)} -- React-компоненты, отвечающие за отображение интерфейса и взаимодействие с пользователем (\texttt{app/components/}).
+    \item \textbf{Слой маршрутизации (Controller)} -- Next.js страницы \newline (\texttt{app/[route]/page.tsx}) и API Routes (\texttt{app/api/[route]/route.ts}).
+    \item \textbf{Бизнес-логика} -- функции для работы с данными, расчётов, валидации (\texttt{app/lib/}).    
+    \item \textbf{Слой данных (Model)} -- взаимодействие с SQLite через библиотеку Better-SQLite3. Схема БД и функции доступа в \texttt{app/lib/db.ts}.
+\end{enumerate}
+
+\textbf{Поток данных}:
+\begin{enumerate}
+    \item Пользователь взаимодействует с React-компонентом
+    \item Компонент вызывает API-эндпоинт через fetch/SWR
+    \item API Route проверяет авторизацию, валидирует данные
+    \item Бизнес-логика обрабатывает запрос, работает с БД
+    \item Результат возвращается в виде JSON
+    \item SWR кэширует ответ и обновляет компонент
+    \item React перерисовывает интерфейс
+\end{enumerate}
+
+\subsection{Структура базы данных}
+База данных состоит из 8 таблиц.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{images/db_scheme.png}
+    \caption{Схема базы данных}
+    \label{fig:db_scheme}
+\end{figure}
+
+Основные сущности: users -- таблица с пользователями, groups -- таблица с группами, expenses -- таблица с расходами, settlement\_payments -- таблица с платежами.
+
+Вспомогательные сущности: group\_members, expense\_splits -- для связи многие ко многим, group\_invites -- таблица с приглашениями в группу, sessions -- таблица с сессиями пользователей.
+
+\subsection{API-routers}
+\textbf{Аутентификация} (\texttt{/api/auth/*}):
+\begin{itemize}
+    \item \texttt{POST /api/auth/register} -- регистрация нового пользователя. Создаёт пользователя, хеширует пароль, создаёт сессию.
+    
+    \item \texttt{POST /api/auth/login} -- вход в систему. Проверяет пароль, создаёт сессию, устанавливает cookie.
+    
+    \item \texttt{POST /api/auth/logout} -- выход из системы. Удаляет сессию и cookie.
+    
+    \item \texttt{GET /api/auth/me} -- получение информации о текущем пользователе.
+\end{itemize}
+
+\textbf{Управление группами} (\texttt{/api/groups/*}):
+\begin{itemize}
+    \item \texttt{GET /api/groups} -- получение списка групп текущего пользователя
+    
+    \item \texttt{POST /api/groups} -- создание новой группы.
+    \item 
+    \item \texttt{GET /api/groups/[id]} -- получение информации о группе с участниками
+    
+    \item \texttt{DELETE /api/groups/[id]} -- удаление группы.
+\end{itemize}
+
+\textbf{Расходы} (\texttt{/api/groups/[id]/expenses/*}):
+\begin{itemize}
+    \item \texttt{GET /api/groups/[id]/expenses} -- список всех расходов группы с разбивкой
+    
+    \item \texttt{POST /api/groups/[id]/expenses} -- создание расхода.  После создания генерируется событие \texttt{expense:created}.
+    
+    \item \texttt{GET /api/groups/[id]/expenses/[expenseId]} -- получение конкретного расхода
+    
+    \item \texttt{PUT /api/groups/[id]/expenses/[expenseId]} -- редактирование расхода. Удаляет старые splits и создаёт новые.
+    
+    \item \texttt{DELETE /api/groups/[id]/expenses/[expenseId]} -- удаление расхода. Каскадно удаляет splits благодаря FOREIGN KEY.
+\end{itemize}
+
+\textbf{Платежи} (\texttt{/api/groups/[id]/payments/*}):
+\begin{itemize}
+    \item \texttt{GET /api/groups/[id]/payments} -- список всех платежей группы
+    
+    \item \texttt{POST /api/groups/[id]/payments} -- регистрация платежа. Вставляет запись в \texttt{settlement\_payments}. Генерирует событие \texttt{payment:created}.
+    
+    \item \texttt{DELETE /api/groups/[id]/payments/[paymentId]} -- удаление платежа
+\end{itemize}
+
+\textbf{Приглашения} (\texttt{/api/groups/[id]/invites/*}):
+\begin{itemize}
+    \item \texttt{GET /api/groups/[id]/invites} -- список активных приглашений группы
+    
+    \item \texttt{POST /api/groups/[id]/invites} -- создание нового приглашения. Генерирует уникальный 6-символьный код и 48-символьный токен.
+    
+    \item \texttt{POST /api/invites/accept} -- принятие приглашения. Добавляет пользователя в \texttt{group\_members}, отмечает приглашение использованным.
+\end{itemize}
+
+\textbf{Обработка ошибок}:
+
+Все API-маршруты используют единообразную обработку ошибок:
+\cite{RFC7231}
+\begin{itemize}
+    \item 401 Unauthorized -- нет сессии или сессия истекла
+    \item 403 Forbidden -- нет доступа к ресурсу
+    \item 404 Not Found -- ресурс не найден
+    \item 400 Bad Request -- невалидные данные
+    \item 409 Conflict -- конфликт (например, email уже существует)
+    \item 500 Internal Server Error -- ошибка сервера
+\end{itemize}
+
+Все ошибки возвращаются в формате \texttt{\{"error": "[Описание ошибки]"\}}.
+
+\subsection{Клиентские компоненты}
+React-компоненты организованы в папке \texttt{app/components/}
+
+\textbf{AuthGuard.tsx} -- компонент-обёртка для проверки наличия сессии, при её отсутствии перенаправляет на страницу входа.
+
+\textbf{GroupCard.tsx} -- карточка группы на главной странице. Отображает название, количество участников, общую сумму расходов.
+
+\textbf{GroupView.tsx} -- главный компонент страницы группы.
+
+\textbf{ExpenseList.tsx} -- список расходов группы. Отображает каждый расход с описанием, суммой, плательщиком, датой. Кнопки редактирования и удаления.
+
+\textbf{ExpenseForm.tsx} -- форма добавления/редактирования расхода.
+
+\textbf{SettlementList.tsx} -- список расчётов. Отображает кто кому и сколько должен. Кнопки для регистрации платежа. Показывает историю выполненных платежей.
+
+\textbf{ParticipantList.tsx} -- список участников группы с отображением их балансов (переплата/долг).
+
+\textbf{GroupInvitePanel.tsx} -- панель управления приглашениями. Показывает активные приглашения, позволяет создать новое, копировать код/ссылку в буфер обмена.
+
+\textbf{JoinGroupForm.tsx} -- форма для присоединения к группе по коду приглашения.
+
+\textbf{UserMenu.tsx} -- header приложения с отображением логотипа, имени и кнопкой выхода.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.92\textwidth]{images/class_diagram.png}
+    \caption{Диаграмма классов}
+\end{figure}
+
+\newpage
+\section{Реализация}
+
+\subsection{Система аутентификации}
+
+Система аутентификации реализована в файле \texttt{app/lib/auth.ts}. Обрабатывает регистрацию, вход, управление сессиями и защиту паролей.
+
+\textbf{Управление сессиями}
+
+Сессии хранятся в таблице \texttt{sessions} БД. При входе создаётся новая сессия:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+export function createSession(userId: string): string {
+  const sessionId = randomUUID();
+  const expiresAt = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000
+  ).toISOString();  
+  db.prepare(
+    `INSERT INTO sessions (id, user_id, expires_at) 
+     VALUES (?, ?, ?)`
+  ).run(sessionId, userId, expiresAt);
+  
+  return sessionId;
+}
+\end{lstlisting}
+
+Время жизни сессии -- 30 дней. При каждом запросе проверяется актуальность сессии:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+export function getSession(sessionId: string): 
+  Session | null {
+  const session = db.prepare(
+    `SELECT * FROM sessions 
+     WHERE id = ? AND expires_at > datetime('now')`
+  ).get(sessionId);
+  
+  return session || null;
+}
+\end{lstlisting}
+
+\textbf{Cookie-based аутентификация}
+
+Идентификатор сессии хранится в HTTP-only cookie, откуда он и извлекается при необходимости валидировать сессию:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+export async function setSessionCookie(
+  sessionId: string
+): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set('tripf_session', sessionId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60,
+    path: '/',
+  });
+}
+\end{lstlisting}
+
+\subsection{Управление группами}
+
+Функции для работы с группами находятся в \texttt{app/lib/groups.ts} и \newline \texttt{app/lib/invites.ts}.
+
+\textbf{Система приглашений}
+
+Для присоединения к группе используются два типа идентификаторов:
+
+\begin{itemize}
+    \item \textbf{Токен} -- для ссылок-приглашений вида \texttt{/invite/[token]}
+    \item \textbf{Код} -- короткий код типа <<A3K9M2>> для ручного ввода
+\end{itemize}
+
+Генерация уникального кода (\texttt{app/lib/invites.ts}):
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+const CODE_ALPHABET = 
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+const CODE_LENGTH = 6;
+
+function generateUniqueCode() {
+  let code: string;
+  do {
+    code = '';
+    for (let i = 0; i < CODE_LENGTH; i++) {
+      const index = Math.floor(
+        Math.random() * CODE_ALPHABET.length
+      );
+      code += CODE_ALPHABET[index];
+    }
+  } while (
+    db.prepare(
+      `SELECT 1 FROM group_invites WHERE code = ?`
+    ).get(code)
+  );
+  return code;
+}
+\end{lstlisting}
+
+Генерация приглашения:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+export function createGroupInvite(
+  groupId: string, 
+  createdBy: string, 
+  expiresInHours: number = 72
+): GroupInvite {
+  const inviteId = randomUUID();
+  const token = randomBytes(24).toString('hex');
+  const code = generateUniqueCode();
+  const expiresAt = new Date(
+    Date.now() + expiresInHours * 60 * 60 * 1000
+  );
+  
+  db.prepare(
+    `INSERT INTO group_invites 
+     (id, group_id, token, code, created_by, 
+      expires_at) 
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(inviteId, groupId, token, code, createdBy, 
+         expiresAt);
+  
+  return getInviteById(inviteId);
+}
+\end{lstlisting}
+
+По умолчанию приглашение действует 72 часа.
+
+\subsection{Учёт расходов}
+\textbf{Создание расхода}
+
+API-маршрут \texttt{POST /api/groups/[id]/expenses} принимает:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+{
+  "description": "desc",
+  "amount": 0000,
+  "paidBy": "user-uuid",
+  "splitType": "equal",
+  "splits": [
+    { "participantId": "user1-uuid", "amount": 0000 },
+    { "participantId": "user2-uuid", "amount": 0000 },
+    ...
+  ]
+}
+\end{lstlisting}
+
+Реализация в \texttt{app/api/groups/[id]/expenses/route.ts}:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+const expenseId = randomUUID();
+const expenseDate = new Date().toISOString();
+
+const insertExpense = db.transaction(() => {
+  // |* Создаём расход *|
+  db.prepare(
+    `INSERT INTO expenses 
+     (id, group_id, description, amount, 
+      paid_by_user_id, split_type, date) 
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(expenseId, groupId, description, amount, 
+         paidBy, splitType, expenseDate);
+  
+  // |* Создаём разбивку *|
+  const insertSplit = db.prepare(
+    `INSERT INTO expense_splits 
+     (expense_id, user_id, amount) 
+     VALUES (?, ?, ?)`
+  );
+  
+  for (const split of splits) {
+    insertSplit.run(
+      expenseId, 
+      split.participantId, 
+      split.amount
+    );
+  }
+});
+
+insertExpense();
+\end{lstlisting}
+
+Затем генерируем событие для обновления UI:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+emitGroupEvent(groupId, { 
+  type: 'expense:created', 
+  expenseId 
+});
+\end{lstlisting}
+
+\subsection{Регистрация платежей}
+
+Когда участники фактически производят переводы друг другу (через банк, наличными), они регистрируют это в приложении для пересчёта балансов.
+
+\textbf{Создание платежа}
+
+API-маршрут \texttt{POST /api/groups/[id]/payments}:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+export async function POST(request, { params }) {
+  const userId = await getCurrentUserId();
+  const { id: groupId } = await params;
+  const { from, to, amount, note } = 
+    await request.json();
+  
+  // |* Валидация *|
+  if (!from || !to || !amount || amount <= 0) {
+    return NextResponse.json(
+      { error: 'Неверные данные' }, 
+      { status: 400 }
+    );
+  }
+  
+  if (from === to) {
+    return NextResponse.json(
+      { error: 'Нельзя платить самому себе' }, 
+      { status: 400 }
+    );
+  }
+  
+  const paymentId = randomUUID();
+  const createdAt = new Date().toISOString();
+  
+  db.prepare(
+    `INSERT INTO settlement_payments 
+     (id, group_id, from_user_id, to_user_id, 
+      amount, note, created_by, created_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(paymentId, groupId, from, to, amount, 
+         note, userId, createdAt);
+  
+  // |* Генерируем событие *|
+  emitGroupEvent(groupId, { 
+    type: 'payment:created', 
+    paymentId 
+  });
+  
+  return NextResponse.json({ 
+    payment: { id: paymentId, from, to, amount, 
+               note, createdBy: userId, createdAt } 
+  }, { status: 201 });
+}
+\end{lstlisting}
+
+\subsection{Система событий}
+
+Для синхронизации интерфейса при изменении данных используется простая реализация паттерна Observer в \texttt{app/lib/eventBus.ts}.
+
+\textbf{Реализация EventBus}:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+type Listener = (payload: unknown) => void;
+
+const listeners = 
+  new Map<string, Set<Listener>>();
+
+export function subscribeToGroup(
+  groupId: string, 
+  listener: Listener
+): () => void {
+  const groupListeners = 
+    listeners.get(groupId) ?? new Set<Listener>();
+  groupListeners.add(listener);
+  listeners.set(groupId, groupListeners);
+  
+  // |* Возвращаем функцию отписки *|
+  return () => {
+    const current = listeners.get(groupId);
+    if (!current) return;
+    current.delete(listener);
+    if (current.size === 0) {
+      listeners.delete(groupId);
+    }
+  };
+}
+
+export function emitGroupEvent(
+  groupId: string, 
+  payload: unknown
+): void {
+  const groupListeners = listeners.get(groupId);
+  if (!groupListeners) return;
+  
+  for (const listener of groupListeners) {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.error('Event listener error:', error);
+    }
+  }
+}
+\end{lstlisting}
+
+\textbf{Использование в компоненте}:
+
+В \texttt{GroupView.tsx} компонент подписывается на события группы:
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+useEffect(() => {
+  const unsubscribe = subscribeToGroup(
+    groupId, 
+    (payload) => {
+      // |* При любом изменении перезагружаем данные *|
+      mutate(`/api/groups/${groupId}`);
+      mutate(`/api/groups/${groupId}/expenses`);
+      mutate(`/api/groups/${groupId}/payments`);
+    }
+  );
+  
+  return unsubscribe; // |* Отписка при размонтировании *|
+}, [groupId]);
+\end{lstlisting}
+
+Функция \texttt{mutate} из SWR инвалидирует кэш и перезапрашивает данные с сервера. Это позволяет обновлять данные в UI при изменении данных на сервере, у всех пользователей в группе. Но такая система не сохранит события при перезагрузке сервера.
+
+Для production-версии в идеале переписать на Redis Pub/Sub или WebSocket.
+
+\newpage
+
+\section{Тестирование}
+
+Допустим есть 4 человека, которые хотять поехать в путешествие. Они регистрируются в приложении. Один из них создаёт группу и приглашает трёх других. Пользователи вводят коды приглашений и попадают в группу. Далее каждый вносит расходы в группу. Затем происходит автоматический расчёт долгов между участниками. После этого пользователи отмечают платежи как оплаченные и система автоматически рассчитывает балансы между участниками.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.67\textwidth]{images/interface_example.png}
+    \caption{Интерфейс приложения}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/uasge_example.png}
+    \caption{Сценарий использования}
+\end{figure}
+
+\newpage
+\section{Дальнейшее развитие системы}
+
+В текущей версии реализованы базовые функции для учёта групповых расходов. Для расширения возможностей приложения можно добавить возможность разделения расхода не только поровну, но и по процентам, суммам, долям.
+
+Добавить мультивалютность, то есть возможность использования нескольких валют в одной группе. Сделать интеграцию с API курсов валют и пересчитывать суммы расходов в основную валюту группы.
+
+Сделать категоризацию расходов (гостиницы, такси, питание, развлечения, ...).
+
+Сделать дашборд с графиком расходов по категориям, участникам. Средний расход на человека и тому подобное.
+
+Реализовать интеграцию с платёжными системами, например генерировать QR-код для переводов по СБП.
+
+Возможность загружать фотографии чеков к расходам.
+
+\newpage
+
+\section{Заключение}
+
+В ходе выполнения курсовой работы было разработано функциональное веб-приложение TripF для управления групповыми расходами.
+
+Разработанное приложение решает реальную проблему справедливого разделения расходов в группах. Приложение готово к использованию в реальных поездках и групповых мероприятиях.
+
+TripF имеет потенциал для дальнейшего развития: добавление мультивалютности, категорий расходов, статистики, интеграции с платёжными системами. Открытый исходный код позволяет сообществу участвовать в улучшении проекта.
+
+Исходный код приложения доступен по ссылке: \url{https://github.com/arpefly/tripf}.
+
+\newpage
+
+\bibliographystyle{unsrt}
+\bibliography{lib}
+
+\newpage
+
+\section{Приложение. Скриншоты интерфейса}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/register_page.png}
+    \caption{Форма регистрации}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/main_page.png}
+    \caption{Главная страница}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/invite_pane.png}
+    \caption{Панель создания приглашения}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/add_expense.png}
+    \caption{Форма добавления расхода}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/settlement_list.png}
+    \caption{Список расчётов}
+\end{figure}
+
+\end{document}
