@@ -5,6 +5,7 @@ import { getCurrentUserId } from "@/app/lib/auth";
 import { emitGroupEvent } from "@/app/lib/eventBus";
 import { computeNetBalances } from "@/app/lib/calculations";
 import type { Expense, ExpenseSplit, Participant, SettlementPayment } from "@/app/lib/types";
+import { send } from "process";
 
 interface RouteParams {
   params: Promise<{ id: string }>;

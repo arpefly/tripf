@@ -23,7 +23,6 @@
 Существующие решения для разделения расходов, такие как Splitwise, Tricount и Settle Up, решают эти проблемы, хоть и имеют свои недостатки.
 
 \newpage
-
 \section{Что хотим получить}
 
 Результатом этой курсовой работы должно стать веб-приложение для управления групповыми расходами. 
@@ -72,7 +71,6 @@
 Главным критерием выбора такого стека -- единая экосистема Next.js. Это позволяет использовать один и тот же язык для фронта и бэка, что упрощает разработку и позволяет переиспользовать код (типы данных, утилиты).
 
 \newpage
-
 \section{Архитектура системы}
 \subsection{Общая архитектура приложения}
 
@@ -220,53 +218,18 @@ React-компоненты организованы в папке \texttt{app/co
 \textbf{Управление сессиями}
 
 Сессии хранятся в таблице \texttt{sessions} БД. При входе создаётся новая сессия:
+реализация функции \texttt{createSession} приведена в листинге~\ref{lst:auth-create-session}.
 
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
-export function createSession(userId: string): string {
-  const sessionId = randomUUID();
-  const expiresAt = new Date(
-    Date.now() + 30 * 24 * 60 * 60 * 1000
-  ).toISOString();  
-  db.prepare(
-    `INSERT INTO sessions (id, user_id, expires_at) 
-     VALUES (?, ?, ?)`
-  ).run(sessionId, userId, expiresAt);
-  
-  return sessionId;
-}
-\end{lstlisting}
-
-Время жизни сессии -- 30 дней. При каждом запросе проверяется актуальность сессии:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
-export function getSession(sessionId: string): 
-  Session | null {
-  const session = db.prepare(
-    `SELECT * FROM sessions 
-     WHERE id = ? AND expires_at > datetime('now')`
-  ).get(sessionId);
-  
-  return session || null;
-}
-\end{lstlisting}
-
-\textbf{Cookie-based аутентификация}
+Время жизни сессии -- 30 дней. При каждом запросе проверяется актуальность сессии.
 
 Идентификатор сессии хранится в HTTP-only cookie, откуда он и извлекается при необходимости валидировать сессию:
+пример функции установки cookie приведён в листинге~\ref{lst:auth-set-cookie}.
 
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
-export async function setSessionCookie(
-  sessionId: string
-): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.set('tripf_session', sessionId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60,
-    path: '/',
-  });
-}
-\end{lstlisting}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{images/session_cookie.png}
+  \caption{Cookie с идентификатором сессии}
+\end{figure}
 
 \subsection{Управление группами}
 
@@ -282,8 +245,187 @@ export async function setSessionCookie(
 \end{itemize}
 
 Генерация уникального кода (\texttt{app/lib/invites.ts}):
+реализация генерации уникального кода показана в листинге~\ref{lst:invites-generate-code}.
 
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+Реализация генерации приглашения  приведена в листинге~\ref{lst:invites-create}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{images/invites_examples.png}
+  \caption{Примеры приглашений}
+\end{figure}
+
+Примеры ссылки приглашения: \newline \url{localhost:3000/invite/558130fc7f7d34e9b4650578bc1fa6cb5dce7823c0e8d6c7}
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{images/link_invite_accept.png}
+  \caption{Пример перехода по ссылке приглашения}
+\end{figure}
+
+При повторном переходе по ссылке приглашения будет отображаться ошибка:
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{images/link_invite_accept_error.png}
+  \caption{Ошибка перехода по ссылке приглашения}
+\end{figure}
+
+
+\subsection{Учёт расходов}
+\textbf{Создание расхода}
+
+API-маршрут \texttt{api/groups/[id]/expenses/route.ts} принимает JSON формата указанного в листинге~\ref{lst:expenses-request}.
+
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{images/expense_request.png}
+  \caption{Запрос на создание расхода}
+\end{figure}
+
+Реализация в \texttt{api/groups/[id]/expenses/route.ts}:
+фрагмент кода вставки расхода и разбивки приведён в листинге~\ref{lst:expenses-insert}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{images/expense_response.png}
+  \caption{Ответ о создании расхода}
+\end{figure}
+
+Затем генерируем событие для обновления UI:
+пример генерации события об изменении данных показан в листинге~\ref{lst:events-expense-created}.
+
+\subsection{Регистрация платежей}
+
+Когда участники фактически производят переводы друг другу (через банк, наличными), они регистрируют это в приложении для пересчёта балансов.
+
+\textbf{Создание платежа}
+
+API-маршрут \texttt{POST api/groups/[id]/payments/route.ts}:
+полный обработчик создания платежа приведён в листинге~\ref{lst:payments-post}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{images/payments_request.png}
+  \caption{Запрос на создание платежа}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{images/payments_response.png}
+  \caption{Ответ на создание платежа}
+\end{figure}
+
+\subsection{Система событий}
+
+Для синхронизации интерфейса при изменении данных используется простая реализация паттерна Observer в \texttt{app/lib/eventBus.ts}.
+
+Рреализация \texttt{EventBus} вынесены в листинг~\ref{lst:eventbus}.
+
+\textbf{Использование в компоненте}:
+
+В \texttt{GroupView.tsx} компонент подписывается на события группы:
+пример использования \texttt{EventBus} на клиенте в компоненте \texttt{GroupView} приведён в листинге~\ref{lst:groupview-subscribe}.
+
+Функция \texttt{mutate} из SWR инвалидирует кэш и перезапрашивает данные с сервера. Это позволяет обновлять данные в UI при изменении данных на сервере, у всех пользователей в группе. Но такая система не сохранит события при перезагрузке сервера.
+
+Для production-версии в идеале переписать на Redis Pub/Sub или WebSocket.
+
+\newpage
+\section{Тестирование}
+
+Допустим есть 4 человека, которые хотять поехать в путешествие. Они регистрируются в приложении. Один из них создаёт группу и приглашает трёх других. Пользователи вводят коды приглашений и попадают в группу. Далее каждый вносит расходы в группу. Затем происходит автоматический расчёт долгов между участниками. После этого пользователи отмечают платежи как оплаченные и система автоматически рассчитывает балансы между участниками.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.67\textwidth]{images/interface_example.png}
+    \caption{Интерфейс приложения}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/uasge_example.png}
+    \caption{Сценарий использования}
+\end{figure}
+
+\newpage
+\section{Дальнейшее развитие системы}
+
+В текущей версии реализованы базовые функции для учёта групповых расходов. Для расширения возможностей приложения можно добавить возможность разделения расхода не только поровну, но и по процентам, суммам, долям.
+
+Добавить мультивалютность, то есть возможность использования нескольких валют в одной группе. Сделать интеграцию с API курсов валют и пересчитывать суммы расходов в основную валюту группы.
+
+Сделать категоризацию расходов (гостиницы, такси, питание, развлечения, ...).
+
+Сделать дашборд с графиком расходов по категориям, участникам. Средний расход на человека и тому подобное.
+
+Реализовать интеграцию с платёжными системами, например генерировать QR-код для переводов по СБП.
+
+Возможность загружать фотографии чеков к расходам.
+
+\newpage
+\section{Заключение}
+
+В ходе выполнения курсовой работы было разработано функциональное веб-приложение TripF для управления групповыми расходами.
+
+Разработанное приложение решает реальную проблему справедливого разделения расходов в группах. Приложение готово к использованию в реальных поездках и групповых мероприятиях.
+
+TripF имеет потенциал для дальнейшего развития: добавление мультивалютности, категорий расходов, статистики, интеграции с платёжными системами. Открытый исходный код позволяет сообществу участвовать в улучшении проекта.
+
+Исходный код приложения доступен по ссылке: \url{https://github.com/arpefly/tripf}.
+
+\newpage
+
+\bibliographystyle{unsrt}
+\bibliography{lib}
+
+\newpage
+\section{Приложение}
+\subsection*{Листинги кода}
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Создание сессии пользователя}, label={lst:auth-create-session}]
+export function createSession(userId: string): string {
+  const sessionId = randomUUID();
+  const expiresAt = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000
+  ).toISOString();  
+  db.prepare(
+    `INSERT INTO sessions (id, user_id, expires_at) 
+     VALUES (?, ?, ?)`
+  ).run(sessionId, userId, expiresAt);
+  
+  return sessionId;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Проверка актуальности сессии}, label={lst:auth-get-session}]
+export function getSession(sessionId: string): 
+  Session | null {
+  const session = db.prepare(
+    `SELECT * FROM sessions 
+     WHERE id = ? AND expires_at > datetime('now')`
+  ).get(sessionId);
+  
+  return session || null;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Установка cookie с идентификатором сессии}, label={lst:auth-set-cookie}]
+export async function setSessionCookie(
+  sessionId: string
+): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set('tripf_session', sessionId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60,
+    path: '/',
+  });
+}
+\end{lstlisting}
+
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Генерация уникального кода приглашения}, label={lst:invites-generate-code}]
 const CODE_ALPHABET = 
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
 const CODE_LENGTH = 6;
@@ -307,9 +449,7 @@ function generateUniqueCode() {
 }
 \end{lstlisting}
 
-Генерация приглашения:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Создание приглашения в группу}, label={lst:invites-create}]
 export function createGroupInvite(
   groupId: string, 
   createdBy: string, 
@@ -334,14 +474,7 @@ export function createGroupInvite(
 }
 \end{lstlisting}
 
-По умолчанию приглашение действует 72 часа.
-
-\subsection{Учёт расходов}
-\textbf{Создание расхода}
-
-API-маршрут \texttt{POST /api/groups/[id]/expenses} принимает:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Структура запроса на создание расхода}, label={lst:expenses-request}]
 {
   "description": "desc",
   "amount": 0000,
@@ -355,9 +488,7 @@ API-маршрут \texttt{POST /api/groups/[id]/expenses} принимает:
 }
 \end{lstlisting}
 
-Реализация в \texttt{app/api/groups/[id]/expenses/route.ts}:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Вставка расхода и разбивки по участникам}, label={lst:expenses-insert}]
 const expenseId = randomUUID();
 const expenseDate = new Date().toISOString();
 
@@ -390,24 +521,14 @@ const insertExpense = db.transaction(() => {
 insertExpense();
 \end{lstlisting}
 
-Затем генерируем событие для обновления UI:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Генерация события о создании расхода}, label={lst:events-expense-created}]
 emitGroupEvent(groupId, { 
   type: 'expense:created', 
   expenseId 
 });
 \end{lstlisting}
 
-\subsection{Регистрация платежей}
-
-Когда участники фактически производят переводы друг другу (через банк, наличными), они регистрируют это в приложении для пересчёта балансов.
-
-\textbf{Создание платежа}
-
-API-маршрут \texttt{POST /api/groups/[id]/payments}:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Обработчик создания платежа}, label={lst:payments-post}]
 export async function POST(request, { params }) {
   const userId = await getCurrentUserId();
   const { id: groupId } = await params;
@@ -453,13 +574,7 @@ export async function POST(request, { params }) {
 }
 \end{lstlisting}
 
-\subsection{Система событий}
-
-Для синхронизации интерфейса при изменении данных используется простая реализация паттерна Observer в \texttt{app/lib/eventBus.ts}.
-
-\textbf{Реализация EventBus}:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Простая реализация EventBus}, label={lst:eventbus}]
 type Listener = (payload: unknown) => void;
 
 const listeners = 
@@ -502,11 +617,7 @@ export function emitGroupEvent(
 }
 \end{lstlisting}
 
-\textbf{Использование в компоненте}:
-
-В \texttt{GroupView.tsx} компонент подписывается на события группы:
-
-\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily]
+\begin{lstlisting}[language=JavaScript, basicstyle=\small\ttfamily, caption={Подписка компонента GroupView на события группы}, label={lst:groupview-subscribe}]
 useEffect(() => {
   const unsubscribe = subscribeToGroup(
     groupId, 
@@ -522,63 +633,8 @@ useEffect(() => {
 }, [groupId]);
 \end{lstlisting}
 
-Функция \texttt{mutate} из SWR инвалидирует кэш и перезапрашивает данные с сервера. Это позволяет обновлять данные в UI при изменении данных на сервере, у всех пользователей в группе. Но такая система не сохранит события при перезагрузке сервера.
-
-Для production-версии в идеале переписать на Redis Pub/Sub или WebSocket.
-
 \newpage
-
-\section{Тестирование}
-
-Допустим есть 4 человека, которые хотять поехать в путешествие. Они регистрируются в приложении. Один из них создаёт группу и приглашает трёх других. Пользователи вводят коды приглашений и попадают в группу. Далее каждый вносит расходы в группу. Затем происходит автоматический расчёт долгов между участниками. После этого пользователи отмечают платежи как оплаченные и система автоматически рассчитывает балансы между участниками.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.67\textwidth]{images/interface_example.png}
-    \caption{Интерфейс приложения}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.8\textwidth]{images/uasge_example.png}
-    \caption{Сценарий использования}
-\end{figure}
-
-\newpage
-\section{Дальнейшее развитие системы}
-
-В текущей версии реализованы базовые функции для учёта групповых расходов. Для расширения возможностей приложения можно добавить возможность разделения расхода не только поровну, но и по процентам, суммам, долям.
-
-Добавить мультивалютность, то есть возможность использования нескольких валют в одной группе. Сделать интеграцию с API курсов валют и пересчитывать суммы расходов в основную валюту группы.
-
-Сделать категоризацию расходов (гостиницы, такси, питание, развлечения, ...).
-
-Сделать дашборд с графиком расходов по категориям, участникам. Средний расход на человека и тому подобное.
-
-Реализовать интеграцию с платёжными системами, например генерировать QR-код для переводов по СБП.
-
-Возможность загружать фотографии чеков к расходам.
-
-\newpage
-
-\section{Заключение}
-
-В ходе выполнения курсовой работы было разработано функциональное веб-приложение TripF для управления групповыми расходами.
-
-Разработанное приложение решает реальную проблему справедливого разделения расходов в группах. Приложение готово к использованию в реальных поездках и групповых мероприятиях.
-
-TripF имеет потенциал для дальнейшего развития: добавление мультивалютности, категорий расходов, статистики, интеграции с платёжными системами. Открытый исходный код позволяет сообществу участвовать в улучшении проекта.
-
-Исходный код приложения доступен по ссылке: \url{https://github.com/arpefly/tripf}.
-
-\newpage
-
-\bibliographystyle{unsrt}
-\bibliography{lib}
-
-\newpage
-
-\section{Приложение. Скриншоты интерфейса}
+\subsection*{Скриншоты интерфейса}
 
 \begin{figure}[h]
     \centering

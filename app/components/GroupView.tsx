@@ -140,7 +140,7 @@ export default function GroupView({
         // надо бы что то ловить с парсинга
       }
 
-      await Promise.all([mutateGroup(), mutateExpenses()]);
+      await Promise.all([mutateGroup(), mutateExpenses(), mutatePayments()]);
     };
 
     eventSource.onerror = () => {

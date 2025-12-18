@@ -8,7 +8,7 @@
 ### Установка
 
 ```bash
-git clone <URL-репозитория> tripf
+git clone git@github.com:arpefly/tripf.git
 cd tripf
 npm install
 ```
